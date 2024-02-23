@@ -3,18 +3,16 @@ package main
 import (
 	"bufio"
 	"crypto/aes"
-	"encoding/base64"
 	"encoding/hex"
-	"fmt"
+	"io"
 	"os"
 	"strings"
-)
 
-func GetUserInput() {
-	text := StringPrompt("Cypher")
-	encoded := base64.StdEncoding.EncodeToString([]byte(text))
-	fmt.Printf("%s\n", encoded)
-}
+	"crypto/cipher"
+
+	"crypto/rand"
+	"fmt"
+)
 
 func main() {
 	mode := StringPrompt("(E)ncrypt or (D)ecrypt?")
@@ -22,46 +20,77 @@ func main() {
 	text := StringPrompt("Text?")
 	switch mode {
 	case "E":
-		EncryptAES([]byte(key), text)
+		encrypted := encrypt(text, key)
+		fmt.Printf("%s \n", encrypted)
 	case "D":
-		DecryptAES([]byte(key), text)
+		decrypted := decrypt(text, key)
+		fmt.Printf("%s \n", decrypted)
 	default:
 		fmt.Println("Invalid input received. Try again.")
 	}
 }
 
-// EncryptAES encrypts a plaintext-string
-func EncryptAES(key []byte, plaintext string) {
+func encrypt(stringToEncrypt string, keyString string) (encryptedString string) {
 
-	c, err := aes.NewCipher(key)
-	CheckError(err)
+	//Since the key is in string, we need to convert decode it to bytes
+	key, _ := hex.DecodeString(keyString)
+	plaintext := []byte(stringToEncrypt)
 
-	out := make([]byte, len(plaintext))
-
-	c.Encrypt(out, []byte(plaintext))
-
-	fmt.Println(hex.EncodeToString(out))
-}
-
-// DecryptAES decrypts an encrypted string
-func DecryptAES(key []byte, ct string) {
-	ciphertext, _ := hex.DecodeString(ct)
-
-	c, err := aes.NewCipher(key)
-	CheckError(err)
-
-	pt := make([]byte, len(ciphertext))
-	c.Decrypt(pt, ciphertext)
-
-	s := string(pt[:])
-	fmt.Println(s)
-}
-
-// CheckError is basic error handling
-func CheckError(err error) {
+	//Create a new Cipher Block from the key
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		panic(err.Error())
 	}
+
+	//Create a new GCM - https://en.wikipedia.org/wiki/Galois/Counter_Mode
+	//https://golang.org/pkg/crypto/cipher/#NewGCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Create a nonce. Nonce should be from GCM
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		panic(err.Error())
+	}
+
+	//Encrypt the data using aesGCM.Seal
+	//Since we don't want to save the nonce somewhere else in this case, we add it as a prefix to the encrypted data. The first nonce argument in Seal is the prefix.
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
+	return fmt.Sprintf("%x", ciphertext)
+}
+
+func decrypt(encryptedString string, keyString string) (decryptedString string) {
+
+	key, _ := hex.DecodeString(keyString)
+	enc, _ := hex.DecodeString(encryptedString)
+
+	//Create a new Cipher Block from the key
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Create a new GCM
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//Get the nonce size
+	nonceSize := aesGCM.NonceSize()
+
+	//Extract the nonce from the encrypted data
+	nonce, ciphertext := enc[:nonceSize], enc[nonceSize:]
+
+	//Decrypt the data
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return fmt.Sprintf("%s", plaintext)
 }
 
 // StringPrompt asks for a string value using the label
@@ -69,7 +98,7 @@ func StringPrompt(label string) string {
 	var s string
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Fprint(os.Stderr, label+" ")
+		_, _ = fmt.Fprint(os.Stderr, label+" ")
 		s, _ = r.ReadString('\n')
 		if s != "" {
 			break
