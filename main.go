@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"crypto/aes"
 	"encoding/hex"
+	"flag"
 	"io"
+	"io/ioutil"
 	"os"
 	"strings"
 
@@ -15,15 +17,65 @@ import (
 )
 
 func main() {
-	mode := StringPrompt("(E)ncrypt or (D)ecrypt?")
-	key := StringPrompt("Cypher?")
-	text := StringPrompt("Text?")
-	switch mode {
+	//mode := StringPrompt("(E)ncrypt or (D)ecrypt?")
+	//key := StringPrompt("Cypher?")
+	//text := StringPrompt("Text?")
+
+	openmode := flag.String("open-mode", "", "(F)ile or (T)ext")
+	filename := flag.String("file", "", "Path to the file to read")
+	cryptomode := flag.String("crypto-mode", "", "(E)ncrypt or (D)ecrypt?")
+	text := flag.String("text", "", "Text to parse")
+	key := flag.String("key", "", "Cryptographic secret")
+	flag.Parse()
+
+	var parseString string
+	switch *openmode {
+	case "F":
+		if *filename != "" {
+			// Read the file contents
+			fileContents, err := ioutil.ReadFile(*filename)
+			if err != nil {
+				fmt.Println("Error reading file:", err)
+				return
+			}
+			// Convert file contents to string
+			parseString = string(fileContents)
+		} else {
+			fmt.Println("No filename provided")
+			return
+		}
+
+	case "T":
+		if *text != "" {
+			parseString = *text
+		} else {
+			fmt.Println("No text provided")
+			return
+		}
+	default:
+		fmt.Println("Invalid open mode")
+		return
+	}
+
+	if flag.CommandLine.Lookup("key") == nil || *key == "" {
+		fmt.Println("No key provided.")
+		flag.Usage()
+		return
+	}
+
+	if flag.CommandLine.Lookup("crypto-mode") == nil || *cryptomode == "" {
+		fmt.Println("No crypto-mode specified.")
+		flag.Usage()
+		return
+	}
+	// endregion errorchecks
+
+	switch *cryptomode {
 	case "E":
-		encrypted := encrypt(text, key)
+		encrypted := encrypt(parseString, *key)
 		fmt.Printf("%s \n", encrypted)
 	case "D":
-		decrypted := decrypt(text, key)
+		decrypted := decrypt(parseString, *key)
 		fmt.Printf("%s \n", decrypted)
 	default:
 		fmt.Println("Invalid input received. Try again.")
